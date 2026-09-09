@@ -117,6 +117,10 @@ textarea:focus {
   gap: 14px;
 }
 
+.loading-card[hidden] {
+  display: none;
+}
+
 .spinner {
   width: 24px;
   height: 24px;

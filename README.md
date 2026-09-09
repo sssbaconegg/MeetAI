@@ -1,11 +1,14 @@
 # MeetAI
 
-회의 녹음(mp3/wav)을 올리면 **완전히 로컬에서** STT로 텍스트를 뽑고, 로컬 LLM으로
-구조화된 회의록을 만들어주는 FastAPI 서비스입니다. 외부 API 없이
-[faster-whisper](https://github.com/SYSTRAN/faster-whisper) + [Ollama](https://ollama.com/)만으로 동작합니다.
+회의 중에 적은 **간단한 메모**를 뼈대로 삼고, **녹음 파일**에서 뽑아낸 세부 내용(정확한
+결정사항·담당자·일정 등)으로 살을 붙여 완성된 회의록을 만들어주는 서비스입니다. 메모 없이
+녹음만 올려도 동작하지만, 메모가 있으면 메모의 흐름을 그대로 유지한 채 녹음 내용으로
+보완하는 방식으로 요약합니다. **완전히 로컬에서** 동작하며 외부 API 없이
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper)(STT) + [Ollama](https://ollama.com/)(LLM)만으로 돌아가는 FastAPI 서비스입니다.
 
 ```
-오디오 업로드 → faster-whisper STT → (긴 녹취록은 청크 분할) → Ollama LLM 요약 → 구조화된 회의록 JSON
+메모(선택) + 오디오 업로드 → faster-whisper STT → (긴 녹취록은 청크 분할)
+  → 메모를 뼈대로 Ollama LLM이 녹음 내용을 보완 → 구조화된 회의록 JSON
 ```
 
 ---
@@ -32,10 +35,12 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 ## 사용법
 
 ```bash
-# 오디오 업로드 -> job_id 발급
+# 오디오 + 회의 중 적은 메모 업로드 -> job_id 발급
+# memo는 선택이지만, 있으면 이 메모의 흐름을 뼈대로 녹음 내용이 채워집니다.
 curl -X POST http://127.0.0.1:8000/upload-audio \
   -F "audio_file=@meeting.mp3;type=audio/mpeg" \
-  -F "memo=오늘 논의할 안건 메모"
+  -F "memo=1. 프로젝트 진행 상황 공유
+2. 다음 마일스톤 논의"
 # -> {"job_id": "...", "status": "processing", "status_url": "/jobs/..."}
 
 # 처리 결과 조회 (완료될 때까지 폴링)
@@ -57,6 +62,9 @@ curl http://127.0.0.1:8000/jobs/<job_id>
 
 ## 특징
 
+- **메모를 뼈대로 녹음이 살을 붙임** — 메모의 각 항목을 뼈대로 유지한 채, 녹음에서 찾을 수 있는
+  세부 내용(정확한 결정사항·담당자·일정 등)으로 보완. 메모에 없는 내용을 지어내지 않고,
+  메모가 없으면 녹음 내용만으로 작성
 - **완전 로컬 처리** — 오디오/녹취록이 외부로 나가지 않음
 - **긴 회의도 처리** — 녹취록이 길면 자동으로 청크로 나눠 요약 후 통합
 - **정확한 담당업무 추출** — 담당자/업무는 LLM이 매번 재구성하지 않고 그대로 병합해 보여줌
@@ -109,6 +117,9 @@ streamlit_app.py      실험적으로 만들어본 Streamlit 대체 UI (web/이 
 
 ## 기술 원칙
 
+- **메모는 뼈대, 녹음은 보완 자료** — 메모가 있으면 그 구조와 내용을 그대로 유지하고, 녹음
+  스크립트에서 확인되는 세부 내용으로만 채워 넣습니다. 스크립트에 없는 내용은 추측해서
+  만들지 않고, 메모에 적힌 내용을 임의로 바꾸지도 않습니다.
 - **LLM 호출은 전부 LiteLLM 경유** — 프로바이더 SDK를 직접 호출하지 않습니다. `OLLAMA_MODEL`만
   바꾸면 다른 Ollama 모델로, `app/services/summarization.py`의 `ollama_chat/` prefix를 바꾸면
   다른 프로바이더로도 전환할 수 있는 구조입니다.

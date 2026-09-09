@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>회의록 자동 생성</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <h1>📝 회의록 자동 생성</h1>
+      <p>회의 메모와 녹음 파일을 올리면 전사 후 구조화된 회의록을 만들어줍니다.</p>
+    </header>
+
+    <main class="card form-card">
+      <div class="field">
+        <label for="memo">회의 메모 (선택)</label>
+        <textarea
+          id="memo"
+          rows="5"
+          placeholder="회의 중 적은 간단한 메모를 입력하세요. 비워두면 녹음만으로 회의록을 작성합니다."
+        ></textarea>
+      </div>
+
+      <div class="field">
+        <label for="audio-file">녹음 파일 (mp3 / wav)</label>
+        <input id="audio-file" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" />
+        <span id="file-name" class="file-name"></span>
+      </div>
+
+      <button id="generate-btn" type="button">회의록 생성</button>
+      <p id="error-message" class="error-message" hidden></p>
+    </main>
+
+    <section id="loading" class="card loading-card" hidden>
+      <div class="spinner"></div>
+      <p id="loading-text">회의록을 생성하고 있습니다...</p>
+    </section>
+
+    <section id="result" class="result" hidden>
+      <div class="card result-header">
+        <h2 id="result-topic">-</h2>
+        <p id="result-datetime" class="result-datetime"></p>
+      </div>
+
+      <div class="card">
+        <h3>핵심 내용</h3>
+        <ul id="result-highlights" class="bullet-list"></ul>
+      </div>
+
+      <div class="card">
+        <h3>결정사항</h3>
+        <ul id="result-decisions" class="bullet-list"></ul>
+      </div>
+
+      <div class="card">
+        <h3>담당 업무</h3>
+        <table id="result-tasks" class="task-table">
+          <thead>
+            <tr><th>담당자</th><th>업무</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>다음 회의</h3>
+        <p id="result-next-meeting">-</p>
+      </div>
+
+      <details class="card">
+        <summary>전체 전사 텍스트 보기</summary>
+        <p id="result-transcript" class="transcript"></p>
+      </details>
+    </section>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

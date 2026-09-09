@@ -57,26 +57,39 @@ curl http://127.0.0.1:8000/jobs/<job_id>
 
 ## 특징
 
-- **완전 로컬 처리** — 오디오/녹취록이 외부로 나가지 않음 (STT: faster-whisper, 요약: 로컬 Ollama)
-- **긴 회의도 처리** — 녹취록이 길면 자동으로 청크로 나눠 요약 후 통합 ([`SUMMARY_CHUNK_CHAR_LIMIT`](#환경변수))
-- **담당업무는 코드가 병합** — 담당자/업무 매칭은 정확도가 중요하기 때문에, 청크별로 뽑은 담당업무
-  리스트를 LLM이 다시 재구성하지 않고 코드에서 그대로 합쳐서(중복만 제거) 보여줍니다. 전체 맥락이
-  필요한 회의 주제·핵심내용·결정사항만 LLM이 통합합니다.
-- **날짜 검증** — `일시`/`다음회의`는 실제 날짜·요일·시간 형식일 때만 채우고, 아니면 `null`로 강제합니다.
-- **청크 처리 실패 시 재시도 + 표시** — 청크 하나가 JSON 파싱에 실패하면 1회 재시도하고, 그래도
-  실패하면 로그에 남기고 최종 결과에 `처리_경고` 필드로 표시합니다 (조용히 누락되지 않음).
+- **완전 로컬 처리** — 오디오/녹취록이 외부로 나가지 않음
+- **긴 회의도 처리** — 녹취록이 길면 자동으로 청크로 나눠 요약 후 통합
+- **정확한 담당업무 추출** — 담당자/업무는 LLM이 매번 재구성하지 않고 그대로 병합해 보여줌
+- **믿을 수 있는 날짜** — 형식이 아닌 값은 채워 넣지 않고 `null`로 처리
+- **처리 실패가 조용히 묻히지 않음** — 실패한 구간은 로그와 결과에 명시적으로 표시
+
+동작 원리와 설계 이유는 [기술 원칙](#기술-원칙) 참고.
 
 ## 프로젝트 구조
 
 ```
 app/
-├── main.py                    FastAPI 앱 — POST /upload-audio, GET /jobs/{job_id}
-├── config.py                  환경변수 기반 설정
-├── jobs.py                    작업 상태 저장/조회
+├── main.py                    FastAPI 앱 — POST /upload-audio(업로드+백그라운드 처리), GET /jobs/{job_id}(결과 조회)
+├── config.py                  환경변수 기반 설정 (모델 크기, chunk 한도, timeout 등)
+├── jobs.py                    작업 상태 저장/조회 (processing/completed/failed)
 └── services/
-    ├── transcription.py       faster-whisper STT
-    └── summarization.py       Ollama(LiteLLM) 기반 회의록 요약
-web/                           정적 프론트엔드 (업로드 폼 + 결과 표시)
+    ├── transcription.py       faster-whisper STT — vad_filter로 무음 구간 제거, condition_on_previous_text=False로 환각(반복) 억제
+    └── summarization.py       Ollama(LiteLLM) 기반 회의록 요약 — 청크 분할/병합, 담당업무 코드 레벨 병합, 날짜 검증, 파싱 실패 재시도
+web/
+├── index.html                 업로드 폼 + 결과 표시 페이지
+├── script.js                  /upload-audio 호출, job 폴링, 결과 렌더링
+└── style.css
+requirements.txt              의존성 목록 (pip freeze 기반)
+README.md
+```
+
+개발 중 만든 보조 스크립트(정식 앱 코드는 아님):
+
+```
+test_*.py            엔드투엔드/단위 검증용 스크립트 (요약 로직, 담당업무 병합 등)
+trim_audio.py         테스트용 오디오를 특정 구간만 잘라내는 유틸 (ffmpeg 없이 PyAV 사용)
+wav_to_mp3*.py        wav -> mp3 변환 유틸
+streamlit_app.py      실험적으로 만들어본 Streamlit 대체 UI (web/이 기본 UI)
 ```
 
 ## 환경변수
@@ -93,6 +106,21 @@ web/                           정적 프론트엔드 (업로드 폼 + 결과 �
 | `OLLAMA_NUM_CTX` | `4096` | |
 | `SUMMARY_CHUNK_CHAR_LIMIT` | `5000` | 이보다 긴 녹취록은 청크로 나눠 요약 후 통합 |
 | `MAX_UPLOAD_MB` | `1024` | |
+
+## 기술 원칙
+
+- **LLM 호출은 전부 LiteLLM 경유** — 프로바이더 SDK를 직접 호출하지 않습니다. `OLLAMA_MODEL`만
+  바꾸면 다른 Ollama 모델로, `app/services/summarization.py`의 `ollama_chat/` prefix를 바꾸면
+  다른 프로바이더로도 전환할 수 있는 구조입니다.
+- **정확도가 중요한 항목은 LLM에게 재해석을 맡기지 않습니다** — 담당업무(담당자/업무 매칭)는
+  청크별로 LLM이 추출한 리스트를 코드가 그대로 병합(중복만 제거)합니다. 전체 맥락이 필요한
+  회의 주제·핵심내용·결정사항만 LLM이 통합하도록 역할을 분리했습니다.
+- **검증 가능한 값은 LLM 출력을 그대로 믿지 않습니다** — `일시`/`다음회의`는 정규식으로 실제
+  날짜·요일·시간 형식인지 검증한 뒤, 아니면 무조건 `null`로 강제합니다.
+- **실패는 조용히 넘어가지 않습니다** — 청크 요약이 JSON 파싱에 실패하면 로그를 남기고 1회
+  재시도하며, 그래도 실패하면 최종 결과의 `처리_경고` 필드로 사용자에게 드러냅니다.
+- **결과는 항상 구조화된 JSON** — 자유 텍스트 채팅이 아니라, 정해진 스키마(회의 주제/일시/
+  핵심내용/결정사항/담당업무/다음회의)로만 응답하도록 프롬프트와 후처리를 강제합니다.
 
 ## 알려진 한계
 
